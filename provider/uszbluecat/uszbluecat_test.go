@@ -23,7 +23,6 @@ import (
 	"strings"
 	"testing"
 
-	etcdcv3 "go.etcd.io/etcd/client/v3"
 	"sigs.k8s.io/external-dns/endpoint"
 	"sigs.k8s.io/external-dns/plan"
 
@@ -62,22 +61,22 @@ func TestETCDConfig(t *testing.T) {
 	var tests = []struct {
 		name  string
 		input map[string]string
-		want  *etcdcv3.Config
+		want  *Config
 	}{
 		{
 			"default config",
 			map[string]string{},
-			&etcdcv3.Config{Endpoints: []string{"http://localhost:2379"}},
+			&Config{Endpoints: []string{"http://localhost:2379"}},
 		},
 		{
 			"config with ETCD_URLS",
 			map[string]string{"ETCD_URLS": "http://example.com:2379"},
-			&etcdcv3.Config{Endpoints: []string{"http://example.com:2379"}},
+			&Config{Endpoints: []string{"http://example.com:2379"}},
 		},
 		{
 			"config with ETCD_USERNAME and ETCD_PASSWORD",
 			map[string]string{"ETCD_USERNAME": "root", "ETCD_PASSWORD": "test"},
-			&etcdcv3.Config{
+			&Config{
 				Endpoints: []string{"http://localhost:2379"},
 				Username:  "root",
 				Password:  "test",
