@@ -104,7 +104,7 @@ func (c bluecatclient) GetServices(prefix string) ([]*Service, error) {
 	return []*Service{}, nil
 }
 
-// SaveService persists service data into etcd
+// SaveService persists service data into rest api
 func (c bluecatclient) SaveService(service *Service) error {
 	ctx, cancel := context.WithTimeout(c.ctx, etcdTimeout)
 	defer cancel()
@@ -185,32 +185,32 @@ func loadRoots(caPath string) (*x509.CertPool, error) {
 // builds etcd client config depending on connection scheme and TLS parameters
 // TOTO: This is mock and just a copy core dns config
 func getUszBlueCatConfig() (*Config, error) {
-	etcdURLsStr := os.Getenv("ETCD_URLS")
-	if etcdURLsStr == "" {
-		etcdURLsStr = "http://localhost:2379"
+	uszBlueCatUrl := os.Getenv("USZ_BLUECAT_URL")
+	if uszBlueCatUrl == "" {
+		uszBlueCatUrl = "http://localhost:8080"
 	}
-	etcdURLs := strings.Split(etcdURLsStr, ",")
+	etcdURLs := strings.Split(uszBlueCatUrl, ",")
 	firstURL := strings.ToLower(etcdURLs[0])
-	etcdUsername := os.Getenv("ETCD_USERNAME")
-	etcdPassword := os.Getenv("ETCD_PASSWORD")
+	etcdUsername := os.Getenv("USZ_BLUECAT_USERNAME")
+	etcdPassword := os.Getenv("USZ_BLUECAT_PASSWORD")
 	if strings.HasPrefix(firstURL, "http://") {
-		return &Config{Endpoints: etcdURLs, Username: etcdUsername, Password: etcdPassword}, nil
+		return &Config{Endpoint: uszBlueCatUrl, Username: etcdUsername, Password: etcdPassword}, nil
 	} else if strings.HasPrefix(firstURL, "https://") {
-		caFile := os.Getenv("ETCD_CA_FILE")
-		certFile := os.Getenv("ETCD_CERT_FILE")
-		keyFile := os.Getenv("ETCD_KEY_FILE")
-		serverName := os.Getenv("ETCD_TLS_SERVER_NAME")
-		isInsecureStr := strings.ToLower(os.Getenv("ETCD_TLS_INSECURE"))
+		caFile := os.Getenv("USZ_BLUECAT_CA_FILE")
+		certFile := os.Getenv("USZ_BLUECAT_CERT_FILE")
+		keyFile := os.Getenv("USZ_BLUECAT_KEY_FILE")
+		serverName := os.Getenv("USZ_BLUECAT_TLS_SERVER_NAME")
+		isInsecureStr := strings.ToLower(os.Getenv("USZ_BLUECAT_TLS_INSECURE"))
 		isInsecure := isInsecureStr == "true" || isInsecureStr == "yes" || isInsecureStr == "1"
 		tlsConfig, err := newTLSConfig(certFile, keyFile, caFile, serverName, isInsecure)
 		if err != nil {
 			return nil, err
 		}
 		return &Config{
-			Endpoints: etcdURLs,
-			TLS:       tlsConfig,
-			Username:  etcdUsername,
-			Password:  etcdPassword,
+			Endpoint: uszBlueCatUrl,
+			TLS:      tlsConfig,
+			Username: etcdUsername,
+			Password: etcdPassword,
 		}, nil
 	} else {
 		return nil, errors.New("etcd URLs must start with either http:// or https://")
@@ -268,7 +268,7 @@ func findLabelInTargets(targets []string, label string) (string, bool) {
 	return "", false
 }
 
-// Records returns all DNS records found in UszBlueCat etcd backend. Depending on the record fields
+// Records returns all DNS records found in UszBlueCat backend. Depending on the record fields
 // it may be mapped to one or two records of type A, CNAME, TXT, A+TXT, CNAME+TXT
 func (p uszBlueCatProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, error) {
 	var result []*endpoint.Endpoint

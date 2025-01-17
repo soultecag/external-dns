@@ -31,11 +31,11 @@ import (
 
 const defaultUszBlueCatPrefix = "/skydns/"
 
-type fakeETCDClient struct {
+type fakeUSZ_BLUECATClient struct {
 	services map[string]Service
 }
 
-func (c fakeETCDClient) GetServices(prefix string) ([]*Service, error) {
+func (c fakeUSZ_BLUECATClient) GetServices(prefix string) ([]*Service, error) {
 	var result []*Service
 	for key, value := range c.services {
 		if strings.HasPrefix(key, prefix) {
@@ -47,17 +47,17 @@ func (c fakeETCDClient) GetServices(prefix string) ([]*Service, error) {
 	return result, nil
 }
 
-func (c fakeETCDClient) SaveService(service *Service) error {
+func (c fakeUSZ_BLUECATClient) SaveService(service *Service) error {
 	c.services[service.Key] = *service
 	return nil
 }
 
-func (c fakeETCDClient) DeleteService(key string) error {
+func (c fakeUSZ_BLUECATClient) DeleteService(key string) error {
 	delete(c.services, key)
 	return nil
 }
 
-func TestETCDConfig(t *testing.T) {
+func TestUSZ_BLUECATConfig(t *testing.T) {
 	var tests = []struct {
 		name  string
 		input map[string]string
@@ -66,20 +66,20 @@ func TestETCDConfig(t *testing.T) {
 		{
 			"default config",
 			map[string]string{},
-			&Config{Endpoints: []string{"http://localhost:2379"}},
+			&Config{Endpoint: "http://localhost:8080"},
 		},
 		{
-			"config with ETCD_URLS",
-			map[string]string{"ETCD_URLS": "http://example.com:2379"},
-			&Config{Endpoints: []string{"http://example.com:2379"}},
+			"config with USZ_BLUECAT_URLS",
+			map[string]string{"USZ_BLUECAT_URLS": "http://example.com:8080"},
+			&Config{Endpoint: "http://localhost:8080"},
 		},
 		{
-			"config with ETCD_USERNAME and ETCD_PASSWORD",
-			map[string]string{"ETCD_USERNAME": "root", "ETCD_PASSWORD": "test"},
+			"config with USZ_BLUECAT_USERNAME and USZ_BLUECAT_PASSWORD",
+			map[string]string{"USZ_BLUECAT_USERNAME": "root", "USZ_BLUECAT_PASSWORD": "test"},
 			&Config{
-				Endpoints: []string{"http://localhost:2379"},
-				Username:  "root",
-				Password:  "test",
+				Endpoint: "http://localhost:8080",
+				Username: "root",
+				Password: "test",
 			},
 		},
 	}
@@ -124,7 +124,7 @@ func TestAServiceTranslation(t *testing.T) {
 	expectedDNSName := "example.com"
 	expectedRecordType := endpoint.RecordTypeA
 
-	client := fakeETCDClient{
+	client := fakeUSZ_BLUECATClient{
 		map[string]Service{
 			"/skydns/com/example": {Host: expectedTarget},
 		},
@@ -154,7 +154,7 @@ func TestCNAMEServiceTranslation(t *testing.T) {
 	expectedDNSName := "example.com"
 	expectedRecordType := endpoint.RecordTypeCNAME
 
-	client := fakeETCDClient{
+	client := fakeUSZ_BLUECATClient{
 		map[string]Service{
 			"/skydns/com/example": {Host: expectedTarget},
 		},
@@ -184,7 +184,7 @@ func TestTXTServiceTranslation(t *testing.T) {
 	expectedDNSName := "example.com"
 	expectedRecordType := endpoint.RecordTypeTXT
 
-	client := fakeETCDClient{
+	client := fakeUSZ_BLUECATClient{
 		map[string]Service{
 			"/skydns/com/example": {Text: expectedTarget},
 		},
@@ -216,7 +216,7 @@ func TestAWithTXTServiceTranslation(t *testing.T) {
 	}
 	expectedDNSName := "example.com"
 
-	client := fakeETCDClient{
+	client := fakeUSZ_BLUECATClient{
 		map[string]Service{
 			"/skydns/com/example": {Host: "1.2.3.4", Text: "string"},
 		},
@@ -256,7 +256,7 @@ func TestCNAMEWithTXTServiceTranslation(t *testing.T) {
 	}
 	expectedDNSName := "example.com"
 
-	client := fakeETCDClient{
+	client := fakeUSZ_BLUECATClient{
 		map[string]Service{
 			"/skydns/com/example": {Host: "example.net", Text: "string"},
 		},
@@ -290,7 +290,7 @@ func TestCNAMEWithTXTServiceTranslation(t *testing.T) {
 }
 
 func TestUszBlueCatApplyChanges(t *testing.T) {
-	client := fakeETCDClient{
+	client := fakeUSZ_BLUECATClient{
 		map[string]Service{},
 	}
 	uszbluecat := uszBlueCatProvider{
