@@ -21,5 +21,5 @@ make build.push IMAGE=tribock/external-dns
 
 The Code is under construction.
 
-No requests are made to any othe components.
+No requests are made to any other components.
 Only log is printed.
