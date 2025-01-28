@@ -70,7 +70,7 @@ import (
 	"sigs.k8s.io/external-dns/provider/tencentcloud"
 	"sigs.k8s.io/external-dns/provider/transip"
 	"sigs.k8s.io/external-dns/provider/ultradns"
-	"sigs.k8s.io/external-dns/provider/uszbluecat"
+	"sigs.k8s.io/external-dns/provider/uszipam"
 	"sigs.k8s.io/external-dns/provider/webhook"
 
 	webhookapi "sigs.k8s.io/external-dns/provider/webhook/api"
@@ -357,8 +357,8 @@ func main() {
 		p, err = tencentcloud.NewTencentCloudProvider(domainFilter, zoneIDFilter, cfg.TencentCloudConfigFile, cfg.TencentCloudZoneType, cfg.DryRun)
 	case "webhook":
 		p, err = webhook.NewWebhookProvider(cfg.WebhookProviderURL)
-	case "uszbluecat":
-		p, err = uszbluecat.NewUszBlueCatProvider(domainFilter, cfg.CoreDNSPrefix, cfg.DryRun)
+	case "uszipam":
+		p, err = uszipam.NewUszIpamProvider(domainFilter, cfg.CoreDNSPrefix, cfg.DryRun)
 	default:
 		log.Fatalf("unknown dns provider: %s", cfg.Provider)
 	}

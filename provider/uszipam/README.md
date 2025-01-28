@@ -1,4 +1,4 @@
-# USZ BlueCat provider
+# USZ Ipam provider
 
 This provider is meant to connect the usz developed REST api to the external-dns.
 
@@ -13,7 +13,7 @@ make build.push IMAGE=tribock/external-dns
 ## run
 
 ```bash
-./build/external-dns --txt-owner-id my-cluster-id --provider uszbluecat --source service --once --dry-run --log-level debug
+./build/external-dns --txt-owner-id my-cluster-id --provider uszipam --source service --once --dry-run --log-level debug
 ```
 
 

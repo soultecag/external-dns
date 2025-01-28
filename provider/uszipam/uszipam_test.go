@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package uszbluecat
+package uszipam
 
 import (
 	"context"
@@ -29,13 +29,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const defaultUszBlueCatPrefix = "/skydns/"
+const defaultUszIpamPrefix = "/skydns/"
 
-type fakeUSZ_BLUECATClient struct {
+type fakeUSZ_IpamClient struct {
 	services map[string]Service
 }
 
-func (c fakeUSZ_BLUECATClient) GetServices(prefix string) ([]*Service, error) {
+func (c fakeUSZ_IpamClient) GetServices(prefix string) ([]*Service, error) {
 	var result []*Service
 	for key, value := range c.services {
 		if strings.HasPrefix(key, prefix) {
@@ -47,54 +47,73 @@ func (c fakeUSZ_BLUECATClient) GetServices(prefix string) ([]*Service, error) {
 	return result, nil
 }
 
-func (c fakeUSZ_BLUECATClient) SaveService(service *Service) error {
+func (c fakeUSZ_IpamClient) SaveService(service *Service) error {
 	c.services[service.Key] = *service
 	return nil
 }
 
-func (c fakeUSZ_BLUECATClient) DeleteService(key string) error {
+func (c fakeUSZ_IpamClient) DeleteService(key string) error {
 	delete(c.services, key)
 	return nil
 }
 
-func TestUSZ_BLUECATConfig(t *testing.T) {
+func TestUSZipamConfig(t *testing.T) {
 	var tests = []struct {
-		name  string
-		input map[string]string
-		want  *Config
+		name    string
+		input   map[string]string
+		want    *Config
+		wantErr bool
 	}{
 		{
-			"default config",
+			"default config - missing variables",
 			map[string]string{},
-			&Config{Endpoint: "http://localhost:8080"},
+			nil,
+			true, // Expecting an error because required vars are missing
 		},
 		{
-			"config with USZ_BLUECAT_URLS",
-			map[string]string{"USZ_BLUECAT_URLS": "http://example.com:8080"},
-			&Config{Endpoint: "http://localhost:8080"},
-		},
-		{
-			"config with USZ_BLUECAT_USERNAME and USZ_BLUECAT_PASSWORD",
-			map[string]string{"USZ_BLUECAT_USERNAME": "root", "USZ_BLUECAT_PASSWORD": "test"},
+			"config with USZIPAM_API_BASE_URL",
+			map[string]string{"USZIPAM_API_BASE_URL": "http://example.com:8080", "USZIPAM_API_KEY": "some-api-key"},
 			&Config{
-				Endpoint: "http://localhost:8080",
-				Username: "root",
-				Password: "test",
+				APIBaseURL: "http://example.com:8080",
+				APIKey:     "some-api-key",
 			},
+			false, // No error, as both required vars are present
+		},
+		{
+			"config with missing API_KEY",
+			map[string]string{"USZIPAM_API_BASE_URL": "http://example.com:8080"},
+			nil,
+			true, // Expecting an error because API_KEY is missing
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Set environment variables for this test case
 			closer := envSetter(tt.input)
-			cfg, _ := getUszBlueCatConfig()
+			defer t.Cleanup(closer)
+
+			// Call NewConfig() to get the configuration
+			cfg, err := NewConfig()
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error but got nil")
+				}
+				return // Skip further checks if we expect an error
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			// Compare the returned config with the expected config
 			if !reflect.DeepEqual(cfg, tt.want) {
 				t.Errorf("unexpected config. Got %v, want %v", cfg, tt.want)
 			}
-			t.Cleanup(closer)
 		})
 	}
-
 }
 
 func envSetter(envs map[string]string) (closer func()) {
@@ -124,14 +143,14 @@ func TestAServiceTranslation(t *testing.T) {
 	expectedDNSName := "example.com"
 	expectedRecordType := endpoint.RecordTypeA
 
-	client := fakeUSZ_BLUECATClient{
+	client := fakeUSZ_IpamClient{
 		map[string]Service{
 			"/skydns/com/example": {Host: expectedTarget},
 		},
 	}
-	provider := uszBlueCatProvider{
-		client:           client,
-		uszBlueCatPrefix: defaultUszBlueCatPrefix,
+	provider := uszIpamProvider{
+		client:        client,
+		uszIpamPrefix: defaultUszIpamPrefix,
 	}
 	endpoints, err := provider.Records(context.Background())
 	require.NoError(t, err)
@@ -154,14 +173,14 @@ func TestCNAMEServiceTranslation(t *testing.T) {
 	expectedDNSName := "example.com"
 	expectedRecordType := endpoint.RecordTypeCNAME
 
-	client := fakeUSZ_BLUECATClient{
+	client := fakeUSZ_IpamClient{
 		map[string]Service{
 			"/skydns/com/example": {Host: expectedTarget},
 		},
 	}
-	provider := uszBlueCatProvider{
-		client:           client,
-		uszBlueCatPrefix: defaultUszBlueCatPrefix,
+	provider := uszIpamProvider{
+		client:        client,
+		uszIpamPrefix: defaultUszIpamPrefix,
 	}
 	endpoints, err := provider.Records(context.Background())
 	require.NoError(t, err)
@@ -184,14 +203,14 @@ func TestTXTServiceTranslation(t *testing.T) {
 	expectedDNSName := "example.com"
 	expectedRecordType := endpoint.RecordTypeTXT
 
-	client := fakeUSZ_BLUECATClient{
+	client := fakeUSZ_IpamClient{
 		map[string]Service{
 			"/skydns/com/example": {Text: expectedTarget},
 		},
 	}
-	provider := uszBlueCatProvider{
-		client:           client,
-		uszBlueCatPrefix: defaultUszBlueCatPrefix,
+	provider := uszIpamProvider{
+		client:        client,
+		uszIpamPrefix: defaultUszIpamPrefix,
 	}
 	endpoints, err := provider.Records(context.Background())
 	require.NoError(t, err)
@@ -216,14 +235,14 @@ func TestAWithTXTServiceTranslation(t *testing.T) {
 	}
 	expectedDNSName := "example.com"
 
-	client := fakeUSZ_BLUECATClient{
+	client := fakeUSZ_IpamClient{
 		map[string]Service{
 			"/skydns/com/example": {Host: "1.2.3.4", Text: "string"},
 		},
 	}
-	provider := uszBlueCatProvider{
-		client:           client,
-		uszBlueCatPrefix: defaultUszBlueCatPrefix,
+	provider := uszIpamProvider{
+		client:        client,
+		uszIpamPrefix: defaultUszIpamPrefix,
 	}
 	endpoints, err := provider.Records(context.Background())
 	require.NoError(t, err)
@@ -256,14 +275,14 @@ func TestCNAMEWithTXTServiceTranslation(t *testing.T) {
 	}
 	expectedDNSName := "example.com"
 
-	client := fakeUSZ_BLUECATClient{
+	client := fakeUSZ_IpamClient{
 		map[string]Service{
 			"/skydns/com/example": {Host: "example.net", Text: "string"},
 		},
 	}
-	provider := uszBlueCatProvider{
-		client:           client,
-		uszBlueCatPrefix: defaultUszBlueCatPrefix,
+	provider := uszIpamProvider{
+		client:        client,
+		uszIpamPrefix: defaultUszIpamPrefix,
 	}
 	endpoints, err := provider.Records(context.Background())
 	require.NoError(t, err)
@@ -289,13 +308,13 @@ func TestCNAMEWithTXTServiceTranslation(t *testing.T) {
 	}
 }
 
-func TestUszBlueCatApplyChanges(t *testing.T) {
-	client := fakeUSZ_BLUECATClient{
+func TestUszIpamApplyChanges(t *testing.T) {
+	client := fakeUSZ_IpamClient{
 		map[string]Service{},
 	}
-	uszbluecat := uszBlueCatProvider{
-		client:           client,
-		uszBlueCatPrefix: defaultUszBlueCatPrefix,
+	uszipam := uszIpamProvider{
+		client:        client,
+		uszIpamPrefix: defaultUszIpamPrefix,
 	}
 
 	changes1 := &plan.Changes{
@@ -305,7 +324,7 @@ func TestUszBlueCatApplyChanges(t *testing.T) {
 			endpoint.NewEndpoint("domain2.local", endpoint.RecordTypeCNAME, "site.local"),
 		},
 	}
-	err := uszbluecat.ApplyChanges(context.Background(), changes1)
+	err := uszipam.ApplyChanges(context.Background(), changes1)
 	require.NoError(t, err)
 
 	expectedServices1 := map[string][]*Service{
@@ -322,13 +341,13 @@ func TestUszBlueCatApplyChanges(t *testing.T) {
 			endpoint.NewEndpoint("domain1.local", "A", "6.6.6.6"),
 		},
 	}
-	records, _ := uszbluecat.Records(context.Background())
+	records, _ := uszipam.Records(context.Background())
 	for _, ep := range records {
 		if ep.DNSName == "domain1.local" {
 			changes2.UpdateOld = append(changes2.UpdateOld, ep)
 		}
 	}
-	err = applyServiceChanges(uszbluecat, changes2)
+	err = applyServiceChanges(uszipam, changes2)
 	require.NoError(t, err)
 
 	expectedServices2 := map[string][]*Service{
@@ -346,7 +365,7 @@ func TestUszBlueCatApplyChanges(t *testing.T) {
 		},
 	}
 
-	err = applyServiceChanges(uszbluecat, changes3)
+	err = applyServiceChanges(uszipam, changes3)
 	require.NoError(t, err)
 
 	expectedServices3 := map[string][]*Service{
@@ -362,7 +381,7 @@ func TestUszBlueCatApplyChanges(t *testing.T) {
 			endpoint.NewEndpoint("domain1.local", endpoint.RecordTypeA, "7.7.7.7"),
 		},
 	}
-	err = uszbluecat.ApplyChanges(context.Background(), changes4)
+	err = uszipam.ApplyChanges(context.Background(), changes4)
 	require.NoError(t, err)
 
 	expectedServices4 := map[string][]*Service{
@@ -372,7 +391,7 @@ func TestUszBlueCatApplyChanges(t *testing.T) {
 	validateServices(client.services, expectedServices4, t, 4)
 }
 
-func applyServiceChanges(provider uszBlueCatProvider, changes *plan.Changes) error {
+func applyServiceChanges(provider uszIpamProvider, changes *plan.Changes) error {
 	ctx := context.Background()
 	records, _ := provider.Records(ctx)
 	for _, col := range [][]*endpoint.Endpoint{changes.Create, changes.UpdateNew, changes.Delete} {

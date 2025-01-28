@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package uszbluecat
+package uszipam
 
 import (
 	"context"
@@ -36,25 +36,25 @@ const (
 	priority    = 10 // default priority when nothing is set
 	etcdTimeout = 5 * time.Second
 
-	randomPrefixLabel = "prefix"
+	randomPrefixLabel = "uszipam"
 )
 
-// uszBlueCatClient is an interface to work with UszBlueCat service records in etcd
-type uszBlueCatClient interface {
+// uszIpamClient is an interface to work with UszIpam service records in etcd
+type uszIpamClient interface {
 	GetServices(prefix string) ([]*Service, error)
 	SaveService(value *Service) error
 	DeleteService(key string) error
 }
 
-type uszBlueCatProvider struct {
+type uszIpamProvider struct {
 	provider.BaseProvider
-	dryRun           bool
-	uszBlueCatPrefix string
-	domainFilter     endpoint.DomainFilter
-	client           uszBlueCatClient
+	dryRun        bool
+	uszIpamPrefix string
+	domainFilter  endpoint.DomainFilter
+	client        uszIpamClient
 }
 
-// Service represents UszBlueCat record
+// Service represents UszIpam record
 type Service struct {
 	Host     string `json:"host,omitempty"`
 	Port     int    `json:"port,omitempty"`
@@ -80,20 +80,21 @@ type Service struct {
 	Key string `json:"-"`
 }
 
-type bluecatclient struct {
-	ctx context.Context
+type ipamclient struct {
+	ctx    context.Context
+	config *Config
 }
 
-var _ uszBlueCatClient = bluecatclient{}
+var _ uszIpamClient = ipamclient{}
 
-// GetService return all Service records stored in etcd stored anywhere under the given key (recursively)
-func (c bluecatclient) GetServices(prefix string) ([]*Service, error) {
+// GetService return all Service records stored in bluecat stored anywhere under the given key (recursively)
+func (c ipamclient) GetServices(prefix string) ([]*Service, error) {
 	ctx, cancel := context.WithTimeout(c.ctx, etcdTimeout)
 	defer cancel()
 
 	log.WithFields(
 		log.Fields{
-			"Provider": "UszBlueCat",
+			"Provider": "UszIpam",
 			"LOG_ID":   "WEB-HhRNi",
 		}).Println(prefix, ctx)
 
@@ -101,7 +102,7 @@ func (c bluecatclient) GetServices(prefix string) ([]*Service, error) {
 }
 
 // SaveService persists service data into rest api
-func (c bluecatclient) SaveService(service *Service) error {
+func (c ipamclient) SaveService(service *Service) error {
 	ctx, cancel := context.WithTimeout(c.ctx, etcdTimeout)
 	defer cancel()
 
@@ -113,7 +114,7 @@ func (c bluecatclient) SaveService(service *Service) error {
 	// TODO: send data to rest api
 	log.WithFields(
 		log.Fields{
-			"Provider": "UszBlueCat",
+			"Provider": "UszIpam",
 			"LOG_ID":   "WEB-SKpPn",
 		}).Println(string(value), ctx)
 
@@ -121,45 +122,45 @@ func (c bluecatclient) SaveService(service *Service) error {
 }
 
 // DeleteService deletes service record from etcd
-func (c bluecatclient) DeleteService(key string) error {
+func (c ipamclient) DeleteService(key string) error {
 	ctx, cancel := context.WithTimeout(c.ctx, etcdTimeout)
 	defer cancel()
 
 	// TODO: send data to rest api
 	log.WithFields(
 		log.Fields{
-			"Provider": "UszBlueCat",
+			"Provider": "UszIpam",
 			"LOG_ID":   "WEB-myHiQ",
 		}).Println(key, ctx)
 	return nil
 }
 
-// newUszBlueCatClient is an etcd client constructor
-func newUszBlueCatClient() (uszBlueCatClient, error) {
-	cfg, err := getUszBlueCatConfig()
+// newUszIpamClient is an etcd client constructor
+func newUszIpamClient() (uszIpamClient, error) {
+	cfg, err := NewConfig()
 	if err != nil {
 		return nil, err
 	}
 	log.WithFields(
 		log.Fields{
-			"Provider": "UszBlueCat",
+			"Provider": "UszIpam",
 			"LOG_ID":   "WEB-E09A0",
 		}).Println(cfg)
-	return bluecatclient{context.Background()}, nil
+	return ipamclient{context.Background(), cfg}, nil
 }
 
-// NewUszBlueCatProvider is a UszBlueCat provider constructor
-func NewUszBlueCatProvider(domainFilter endpoint.DomainFilter, prefix string, dryRun bool) (provider.Provider, error) {
-	client, err := newUszBlueCatClient()
+// NewUszIpamProvider is a UszIpam provider constructor
+func NewUszIpamProvider(domainFilter endpoint.DomainFilter, prefix string, dryRun bool) (provider.Provider, error) {
+	client, err := newUszIpamClient()
 	if err != nil {
 		return nil, err
 	}
 
-	return uszBlueCatProvider{
-		client:           client,
-		dryRun:           dryRun,
-		uszBlueCatPrefix: prefix,
-		domainFilter:     domainFilter,
+	return uszIpamProvider{
+		client:        client,
+		dryRun:        dryRun,
+		uszIpamPrefix: prefix,
+		domainFilter:  domainFilter,
 	}, nil
 }
 
@@ -185,16 +186,26 @@ func findLabelInTargets(targets []string, label string) (string, bool) {
 	return "", false
 }
 
-// Records returns all DNS records found in UszBlueCat backend. Depending on the record fields
+// SupportedRecordType returns true if the record type is supported by the provider
+func (p *uszIpamProvider) SupportedRecordType(recordType string) bool {
+	switch recordType {
+	case "A", "AAAA", "CNAME", "SRV", "TXT", "NS":
+		return true
+	default:
+		return false
+	}
+}
+
+// Records returns all DNS records found in UszIpam backend. Depending on the record fields
 // it may be mapped to one or two records of type A, CNAME, TXT, A+TXT, CNAME+TXT
-func (p uszBlueCatProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, error) {
+func (p uszIpamProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, error) {
 	var result []*endpoint.Endpoint
-	services, err := p.client.GetServices(p.uszBlueCatPrefix)
+	services, err := p.client.GetServices(p.uszIpamPrefix)
 	if err != nil {
 		return nil, err
 	}
 	for _, service := range services {
-		domains := strings.Split(strings.TrimPrefix(service.Key, p.uszBlueCatPrefix), "/")
+		domains := strings.Split(strings.TrimPrefix(service.Key, p.uszIpamPrefix), "/")
 		reverse(domains)
 		dnsName := strings.Join(domains[service.TargetStrip:], ".")
 		if !p.domainFilter.Match(dnsName) {
@@ -202,7 +213,7 @@ func (p uszBlueCatProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, 
 		}
 		log.WithFields(
 			log.Fields{
-				"Provider": "UszBlueCat",
+				"Provider": "UszIpam",
 				"LOG_ID":   "WEB-UtH8m",
 			}).Debugf("Getting service (%v) with service host (%s)", service, service.Host)
 		prefix := strings.Join(domains[:service.TargetStrip], ".")
@@ -212,7 +223,7 @@ func (p uszBlueCatProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, 
 				ep.Targets = append(ep.Targets, service.Host)
 				log.WithFields(
 					log.Fields{
-						"Provider": "UszBlueCat",
+						"Provider": "UszIpam",
 						"LOG_ID":   "WEB-dzyjC",
 					}).Debugf("Extending ep (%s) with new service host (%s)", ep, service.Host)
 			} else {
@@ -224,7 +235,7 @@ func (p uszBlueCatProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, 
 				)
 				log.WithFields(
 					log.Fields{
-						"Provider": "UszBlueCat",
+						"Provider": "UszIpam",
 						"LOG_ID":   "WEB-ayWRZ",
 					}).Debugf("Creating new ep (%s) with new service host (%s)", ep, service.Host)
 			}
@@ -246,8 +257,8 @@ func (p uszBlueCatProvider) Records(ctx context.Context) ([]*endpoint.Endpoint, 
 	return result, nil
 }
 
-// ApplyChanges stores changes back to etcd converting them to UszBlueCat format and aggregating A/CNAME and TXT records
-func (p uszBlueCatProvider) ApplyChanges(ctx context.Context, changes *plan.Changes) error {
+// ApplyChanges stores changes back to etcd converting them to UszIpam format and aggregating A/CNAME and TXT records
+func (p uszIpamProvider) ApplyChanges(ctx context.Context, changes *plan.Changes) error {
 	grouped := map[string][]*endpoint.Endpoint{}
 	for _, ep := range changes.Create {
 		grouped[ep.DNSName] = append(grouped[ep.DNSName], ep)
@@ -256,7 +267,7 @@ func (p uszBlueCatProvider) ApplyChanges(ctx context.Context, changes *plan.Chan
 		ep.Labels = changes.UpdateOld[i].Labels
 		log.WithFields(
 			log.Fields{
-				"Provider": "UszBlueCat",
+				"Provider": "UszIpam",
 				"LOG_ID":   "WEB-eD0ao",
 			}).Debugf("Updating labels (%s) with old labels(%s)", ep.Labels, changes.UpdateOld[i].Labels)
 		grouped[ep.DNSName] = append(grouped[ep.DNSName], ep)
@@ -265,7 +276,7 @@ func (p uszBlueCatProvider) ApplyChanges(ctx context.Context, changes *plan.Chan
 		if !p.domainFilter.Match(dnsName) {
 			log.WithFields(
 				log.Fields{
-					"Provider": "UszBlueCat",
+					"Provider": "UszIpam",
 					"LOG_ID":   "WEB-qQPj0",
 				}).Debugf("Skipping record %s because it was filtered out by the specified --domain-filter", dnsName)
 			continue
@@ -280,14 +291,14 @@ func (p uszBlueCatProvider) ApplyChanges(ctx context.Context, changes *plan.Chan
 				prefix := ep.Labels[target]
 				log.WithFields(
 					log.Fields{
-						"Provider": "UszBlueCat",
+						"Provider": "UszIpam",
 						"LOG_ID":   "WEB-gLxuh",
 					}).Debugf("Getting prefix(%s) from label(%s)", prefix, target)
 				if prefix == "" {
 					prefix = fmt.Sprintf("%08x", rand.Int31())
 					log.WithFields(
 						log.Fields{
-							"Provider": "UszBlueCat",
+							"Provider": "UszIpam",
 							"LOG_ID":   "WEB-R9osw",
 						}).Infof("Generating new prefix: (%s)", prefix)
 				}
@@ -295,7 +306,7 @@ func (p uszBlueCatProvider) ApplyChanges(ctx context.Context, changes *plan.Chan
 				service := Service{
 					Host:        target,
 					Text:        ep.Labels["originalText"],
-					Key:         p.etcdKeyFor(prefix + "." + dnsName),
+					Key:         p.keyFor(prefix + "." + dnsName),
 					TargetStrip: strings.Count(prefix, ".") + 1,
 					TTL:         uint32(ep.RecordTTL),
 				}
@@ -303,12 +314,12 @@ func (p uszBlueCatProvider) ApplyChanges(ctx context.Context, changes *plan.Chan
 				ep.Labels[target] = prefix
 				log.WithFields(
 					log.Fields{
-						"Provider": "UszBlueCat",
+						"Provider": "UszIpam",
 						"LOG_ID":   "WEB-aOdbZ",
 					}).Debugf("Putting prefix(%s) to label(%s)", prefix, target)
 				log.WithFields(
 					log.Fields{
-						"Provider": "UszBlueCat",
+						"Provider": "UszIpam",
 						"LOG_ID":   "WEB-3S1bm",
 					}).Debugf("Ep labels structure now: (%v)", ep.Labels)
 			}
@@ -323,21 +334,21 @@ func (p uszBlueCatProvider) ApplyChanges(ctx context.Context, changes *plan.Chan
 
 				log.WithFields(
 					log.Fields{
-						"Provider": "UszBlueCat",
+						"Provider": "UszIpam",
 						"LOG_ID":   "WEB-FJcPz",
 					}).Debugf("Finding label (%s) in targets(%v)", label, ep.Targets)
 				if _, ok := findLabelInTargets(ep.Targets, label); !ok {
 					log.WithFields(
 						log.Fields{
-							"Provider": "UszBlueCat",
+							"Provider": "UszIpam",
 							"LOG_ID":   "WEB-Vq1Z9",
 						}).Debugf("Found non existing label(%s) in targets(%v)", label, ep.Targets)
 					dnsName := ep.DNSName
 					dnsName = labelPrefix + "." + dnsName
-					key := p.etcdKeyFor(dnsName)
+					key := p.keyFor(dnsName)
 					log.WithFields(
 						log.Fields{
-							"Provider": "UszBlueCat",
+							"Provider": "UszIpam",
 							"LOG_ID":   "WEB-e1lB6",
 						}).Infof("Delete key %s", key)
 					if !p.dryRun {
@@ -360,7 +371,7 @@ func (p uszBlueCatProvider) ApplyChanges(ctx context.Context, changes *plan.Chan
 					prefix = fmt.Sprintf("%08x", rand.Int31())
 				}
 				services = append(services, Service{
-					Key:         p.etcdKeyFor(prefix + "." + dnsName),
+					Key:         p.keyFor(prefix + "." + dnsName),
 					TargetStrip: strings.Count(prefix, ".") + 1,
 					TTL:         uint32(ep.RecordTTL),
 				})
@@ -376,7 +387,7 @@ func (p uszBlueCatProvider) ApplyChanges(ctx context.Context, changes *plan.Chan
 		for _, service := range services {
 			log.WithFields(
 				log.Fields{
-					"Provider": "UszBlueCat",
+					"Provider": "UszIpam",
 					"LOG_ID":   "WEB-x2tYe",
 				}).Infof("Add/set key %s to Host=%s, Text=%s, TTL=%d", service.Key, service.Host, service.Text, service.TTL)
 			if !p.dryRun {
@@ -393,10 +404,10 @@ func (p uszBlueCatProvider) ApplyChanges(ctx context.Context, changes *plan.Chan
 		if ep.Labels[randomPrefixLabel] != "" {
 			dnsName = ep.Labels[randomPrefixLabel] + "." + dnsName
 		}
-		key := p.etcdKeyFor(dnsName)
+		key := p.keyFor(dnsName)
 		log.WithFields(
 			log.Fields{
-				"Provider": "UszBlueCat",
+				"Provider": "UszIpam",
 				"LOG_ID":   "WEB-OKvcp",
 			}).Infof("Delete key %s", key)
 		if !p.dryRun {
@@ -410,16 +421,16 @@ func (p uszBlueCatProvider) ApplyChanges(ctx context.Context, changes *plan.Chan
 	return nil
 }
 
-func (p uszBlueCatProvider) etcdKeyFor(dnsName string) string {
+func (p uszIpamProvider) keyFor(dnsName string) string {
 	domains := strings.Split(dnsName, ".")
 	reverse(domains)
 	log.WithFields(
 		log.Fields{
-			"Provider": "UszBlueCat",
+			"Provider": "UszIpam",
 			"LOG_ID":   "WEB-FazCK",
-		}).Infof("etcdKeyFor  %s", domains)
+		}).Infof("keyFor  %s", domains)
 
-	return p.uszBlueCatPrefix + strings.Join(domains, "/")
+	return p.uszIpamPrefix + strings.Join(domains, "/")
 }
 
 func guessRecordType(target string) string {
